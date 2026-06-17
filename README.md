@@ -4,6 +4,10 @@
 
 Languages: [English](README.md) | [简体中文](README.zh-CN.md)
 
+<p align="center">
+  <img src="GIF.gif" alt="ColorOS Live Lyrics Bridge demo" width="360">
+</p>
+
 An LSPosed/libxposed API 102 module that bridges timed lyrics from supported Android music players into the ColorOS/OPlus lock-screen lyric pipeline.
 
 The module currently ships with a default Salt Player adapter and SystemUI renderer hooks. Salt is now just one `PlayerAdapter`, not the identity of the project.

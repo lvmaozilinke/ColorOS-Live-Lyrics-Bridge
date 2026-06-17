@@ -4,6 +4,10 @@
 
 语言：[English](README.md) | [简体中文](README.zh-CN.md)
 
+<p align="center">
+  <img src="GIF.gif" alt="ColorOS Live Lyrics Bridge 演示" width="360">
+</p>
+
 一个基于 LSPosed/libxposed API 102 的模块，用来把受支持音乐播放器的时间轴歌词桥接到 ColorOS/OPlus 锁屏歌词管线。
 
 当前项目内置 Salt Player 适配器和 SystemUI 渲染 hook。Salt Player 只是默认适配器之一，不再是项目本身的专属身份。
