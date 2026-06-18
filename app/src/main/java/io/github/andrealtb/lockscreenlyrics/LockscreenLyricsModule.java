@@ -69,7 +69,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String HOOK_ID_RUS_DEAL_END_TAG = "oplus-media-rus-deal-end-tag";
     private static final String HOOK_ID_RUS_SAVE_LIST_TO_SP = "oplus-media-rus-save-list";
     private static final String HOOK_ID_RUS_GET_WHITE_LIST = "oplus-media-rus-get-white-list";
+    private static final String HOOK_ID_GET_LYRIC_ENTRANCE = "oplus-media-get-lyric-entrance";
     private static final String OPLUS_MEDIA_RUS_TAG_WHITELIST = "whitelist";
+    private static final int OPLUS_LYRIC_ENTRANCE_ALL = 52;
     private static final long LYRIC_CACHE_MAX_AGE_MS = 5 * 60 * 1000L;
     private static final long OPLUS_TAIL_SPACER_DELAY_MS = 8_000L;
     private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS = 8_000L;
@@ -100,7 +102,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile String lastSystemUiSongName = "";
     private volatile String lastSystemUiArtistName = "";
     private volatile boolean systemUiHasOfficialLyric;
-    private volatile boolean oplusMediaWhitelistHooksInstalled;
+    private volatile boolean oplusMediaPolicyHooksInstalled;
     private volatile boolean screenTimeoutReceiverRegistered;
     private volatile boolean systemUiLyricModeEnabled;
     private volatile boolean systemUiLyricModeKeepAwakeActive;
@@ -161,7 +163,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         String packageName = param.getPackageName();
         if (SYSTEMUI_PACKAGE.equals(packageName)) {
             ClassLoader classLoader = param.getClassLoader();
-            installOplusMediaWhitelistBypassHooks(classLoader);
+            installOplusMediaPolicyBypassHooks(classLoader);
             installSystemUiWordLyricHooks(classLoader);
             return;
         }
@@ -218,12 +220,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         return "";
     }
 
-    private void installOplusMediaWhitelistBypassHooks(ClassLoader classLoader) {
-        if (oplusMediaWhitelistHooksInstalled) {
+    private void installOplusMediaPolicyBypassHooks(ClassLoader classLoader) {
+        if (oplusMediaPolicyHooksInstalled) {
             return;
         }
         synchronized (this) {
-            if (oplusMediaWhitelistHooksInstalled) {
+            if (oplusMediaPolicyHooksInstalled) {
                 return;
             }
             try {
@@ -273,10 +275,19 @@ public final class LockscreenLyricsModule extends XposedModule {
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(this::onOplusMediaRusGetWhiteList);
 
-                oplusMediaWhitelistHooksInstalled = true;
-                info("Hooked OPlus media RUS whitelist bypass");
+                Class<?> selectorClass =
+                        classLoader.loadClass("com.oplus.systemui.media.controls.pipeline.MediaActionPrioritySelectorImpl");
+                Method getLyricEntrance = selectorClass.getDeclaredMethod("getLyricEntrance", String.class);
+                getLyricEntrance.setAccessible(true);
+                hook(getLyricEntrance)
+                        .setId(HOOK_ID_GET_LYRIC_ENTRANCE)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onOplusMediaGetLyricEntrance);
+
+                oplusMediaPolicyHooksInstalled = true;
+                info("Hooked OPlus media policy bypass");
             } catch (Throwable t) {
-                error("Failed to hook OPlus media RUS whitelist bypass", t);
+                error("Failed to hook OPlus media policy bypass", t);
             }
         }
     }
@@ -310,6 +321,20 @@ public final class LockscreenLyricsModule extends XposedModule {
             return new OplusMediaWhitelistBypassList((List<?>) result);
         }
         return result;
+    }
+
+    private Object onOplusMediaGetLyricEntrance(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        int original = result instanceof Number ? ((Number) result).intValue() : 0;
+        if (original != 0) {
+            return result;
+        }
+
+        Object packageName = chain.getArg(0);
+        if (packageName instanceof String && !TextUtils.isEmpty((String) packageName)) {
+            return OPLUS_LYRIC_ENTRANCE_ALL;
+        }
+        return 0;
     }
 
     private void installSystemUiWordLyricHooks(ClassLoader classLoader) {
