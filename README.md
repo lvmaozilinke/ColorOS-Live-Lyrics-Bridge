@@ -12,14 +12,6 @@ An LSPosed/libxposed API 102 module that bridges timed lyrics from supported And
 
 The module currently ships a Salt Player compatibility adapter plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
 
-## Highlights in v1.5.0
-
-- Uses Accompanist Lyrics Core behind a small adapter to parse more timed-lyric variants and preserve word timing plus same-timestamp translations.
-- Adds track-aware caching and normalized identity matching, including `[Explicit]` / `[Clean]` suffixes and Salt's lyric-before-metadata handoff.
-- Smooths lock-screen track changes without briefly exposing the official renderer, while keeping first immersive entry and delayed row binding reliable.
-- Improves the word-level renderer with active-word glow, focus transitions, bilingual layout, long-line windows, and persistent translation toggling from the media action area.
-- Tightens immersive-mode detection, screen keep-awake state, OPlus media policy integration, and view/cache cleanup.
-
 ## What It Hooks
 
 Player process:
@@ -188,3 +180,11 @@ LockscreenLyrics: Refreshed active lyric renderer at position=..., line=...
 ```
 
 If you only see `Skip lyricInfo injection because no fresh real lyric is cached`, the adapter has not captured a timed LRC result in the current process yet, or the current song only has untimed lyrics.
+
+## License and acknowledgements
+
+Copyright 2026 Andrea-lyz. This project is released under the [Apache License 2.0](LICENSE).
+
+This project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.5` (`com.mocharealm.accompanist:lyrics-core-jvm`), maintained by [6xingyv](https://github.com/6xingyv), for timed-lyric parsing. Accompanist Lyrics Core is also distributed under the [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE).
+
+Android, ColorOS, OPlus, LSPosed, Salt Player, and other product names are trademarks of their respective owners. This project is not affiliated with or endorsed by those owners.

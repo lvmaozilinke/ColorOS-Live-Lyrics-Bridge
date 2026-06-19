@@ -12,14 +12,6 @@
 
 当前项目保留 Salt Player 兼容适配器和 SystemUI 渲染 hook；其他播放器优先通过 `lyricInfo` 接入协议主动适配。
 
-## v1.5.0 更新亮点
-
-- 通过独立适配层接入 Accompanist Lyrics Core，兼容更多带时间轴的歌词格式，并保留逐字时序和同时间戳翻译。
-- 增加按歌曲缓存与标准化身份匹配，兼容 `[Explicit]` / `[Clean]` 后缀和 Salt“歌词先于元数据到达”的切歌顺序。
-- 优化锁屏切歌衔接，避免短暂闪回官方渲染，同时兼顾首次进入沉浸歌词界面和延迟绑定歌词行。
-- 完善逐字高亮、辉光、焦点过渡、双语排版、长句窗口，以及媒体操作区内可持久保存的翻译开关。
-- 收紧沉浸模式识别、屏幕保活、OPlus 媒体策略接入和视图缓存清理。
-
 ## 功能概览
 
 播放器进程：
@@ -188,6 +180,14 @@ LockscreenLyrics: Refreshed active lyric renderer at position=..., line=...
 ```
 
 如果只看到 `Skip lyricInfo injection because no fresh real lyric is cached`，说明当前进程里适配器还没有抓到时间轴歌词，或者当前歌曲只有非时间轴歌词。
+
+## 开源协议与致谢
+
+Copyright 2026 Andrea-lyz。本项目采用 [Apache License 2.0](LICENSE) 开源。
+
+本项目使用 [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.5`（`com.mocharealm.accompanist:lyrics-core-jvm`）解析时间轴歌词，该项目由 [6xingyv](https://github.com/6xingyv) 维护，同样采用 [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE)。
+
+Android、ColorOS、OPlus、LSPosed、Salt Player 及其他产品名称的商标权归各自权利人所有；本项目与这些权利人不存在隶属或官方背书关系。
 
 ## 当前限制
 
