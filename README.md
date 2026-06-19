@@ -135,7 +135,7 @@ APK output:
 app\build\outputs\apk\debug\app-debug.apk
 ```
 
-JDK 17 or 21 is recommended. Newer unsupported JDK versions may fail during the Android `jlink` transform.
+JDK 21 is required to compile the Lyrics Core dependency. The app itself still targets Java 17 bytecode for Android compatibility.
 
 ## GitHub Actions
 

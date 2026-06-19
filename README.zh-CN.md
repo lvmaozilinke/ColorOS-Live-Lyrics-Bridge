@@ -135,7 +135,7 @@ APK 输出位置：
 app\build\outputs\apk\debug\app-debug.apk
 ```
 
-建议使用 JDK 17 或 JDK 21。过新的非兼容 JDK 版本可能在 Android `jlink` 转换阶段构建失败。
+构建需要 JDK 21，以便读取 Lyrics Core 依赖；应用本身仍输出 Java 17 字节码以保持 Android 兼容性。
 
 ## GitHub Actions
 
