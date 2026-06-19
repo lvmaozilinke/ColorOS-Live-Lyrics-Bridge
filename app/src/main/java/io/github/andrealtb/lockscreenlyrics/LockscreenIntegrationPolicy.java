@@ -4,7 +4,27 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class LockscreenIntegrationPolicy {
+    enum LyricInfoSource {
+        PLAYER_INTEGRATION,
+        MODULE_CAPTURE,
+        PLAYER_FALLBACK,
+        NONE
+    }
+
     private LockscreenIntegrationPolicy() {
+    }
+
+    static LyricInfoSource chooseLyricInfoSource(
+            boolean hasUsablePlayerLyricInfo,
+            boolean hasPlayerIntegrationData,
+            boolean hasCapturedLyricForCurrentTrack) {
+        if (hasPlayerIntegrationData) {
+            return LyricInfoSource.PLAYER_INTEGRATION;
+        }
+        if (hasCapturedLyricForCurrentTrack) {
+            return LyricInfoSource.MODULE_CAPTURE;
+        }
+        return hasUsablePlayerLyricInfo ? LyricInfoSource.PLAYER_FALLBACK : LyricInfoSource.NONE;
     }
 
     static boolean activeTextMatches(String renderedText, String activeText) {

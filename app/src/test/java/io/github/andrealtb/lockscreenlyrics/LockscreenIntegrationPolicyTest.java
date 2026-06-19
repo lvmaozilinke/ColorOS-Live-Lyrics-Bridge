@@ -19,6 +19,30 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void capturedLyricTakesPriorityOverPlayerLyricInfo() {
+        assertEquals(
+                LockscreenIntegrationPolicy.LyricInfoSource.MODULE_CAPTURE,
+                LockscreenIntegrationPolicy.chooseLyricInfoSource(true, false, true));
+    }
+
+    @Test
+    public void explicitPlayerIntegrationTakesPriorityOverModuleCapture() {
+        assertEquals(
+                LockscreenIntegrationPolicy.LyricInfoSource.PLAYER_INTEGRATION,
+                LockscreenIntegrationPolicy.chooseLyricInfoSource(true, true, true));
+    }
+
+    @Test
+    public void playerLyricInfoIsOnlyUsedAsFallback() {
+        assertEquals(
+                LockscreenIntegrationPolicy.LyricInfoSource.PLAYER_FALLBACK,
+                LockscreenIntegrationPolicy.chooseLyricInfoSource(true, false, false));
+        assertEquals(
+                LockscreenIntegrationPolicy.LyricInfoSource.NONE,
+                LockscreenIntegrationPolicy.chooseLyricInfoSource(false, false, false));
+    }
+
+    @Test
     public void translationActionMovesAheadOfTransportActionsByIdentity() {
         Object previous = new Object();
         Object next = new Object();

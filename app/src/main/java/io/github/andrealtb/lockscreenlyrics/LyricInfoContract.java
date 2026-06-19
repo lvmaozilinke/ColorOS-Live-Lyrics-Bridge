@@ -99,5 +99,9 @@ public final class LyricInfoContract {
         public boolean hasWordTiming() {
             return containsTimedLrc(rawLyric);
         }
+
+        public boolean hasModuleExtensionData() {
+            return hasWordTiming() || containsTimedLrc(translationLyric);
+        }
     }
 }

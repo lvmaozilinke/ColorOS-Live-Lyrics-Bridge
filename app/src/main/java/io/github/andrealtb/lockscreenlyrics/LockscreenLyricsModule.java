@@ -65,6 +65,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String OPLUS_LYRIC_INFO_KEY = LyricInfoContract.METADATA_KEY;
     private static final String OPLUS_RAW_LYRIC_INFO_KEY = LyricInfoContract.JSON_RAW_LYRIC;
     private static final String HOOK_ID_SET_METADATA = "lockscreen-lyrics-set-metadata";
+    private static final String HOOK_ID_SET_PLAYBACK_STATE_TRANSLATION_ACTION =
+            "lockscreen-lyrics-set-playback-state-translation-action";
     private static final String HOOK_ID_SYSTEMUI_LOAD_LYRIC = "oplus-word-load-lyric";
     private static final String HOOK_ID_SYSTEMUI_CURRENT_LYRIC = "oplus-word-current-lyric";
     private static final String HOOK_ID_BUNDLE_CURRENT_LYRIC = "oplus-word-bundle-current-lyric";
@@ -100,6 +102,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String TRANSLATION_PREFERENCE_KEY = "lyric_info_translation_enabled";
     private static final String TRANSLATION_ACTION_DESCRIPTION_PREFIX =
             "\u7ffb\u8bd1\uff1a";
+    private static final String TRANSLATION_ACTION_NAME = "\u7ffb\u8bd1";
     private static final int TRANSLATION_ICON_FINGERPRINT_SIZE = 48;
     private static final int OPLUS_LYRIC_ENTRANCE_ALL = 52;
     private static final long LYRIC_CACHE_MAX_AGE_MS = 5 * 60 * 1000L;
@@ -130,7 +133,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final Pattern TITLE_ARTIST_SEPARATOR = Pattern.compile(
             "\\s+[-\\u2013\\u2014]\\s+");
     private static final PlayerAdapter[] PLAYER_ADAPTERS = {
-            new SaltPlayerAdapter()
+            new SaltPlayerAdapter(),
+            new ConePlayerAdapter("ink.trantor.coneplayer"),
+            new ConePlayerAdapter("ink.trantor.coneplayer.gp")
     };
 
     private volatile CachedLyric cachedLyric;
@@ -162,6 +167,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean systemUiHasOfficialLyric;
     private volatile boolean oplusMediaPolicyHooksInstalled;
     private volatile boolean translationToggleActionHookInstalled;
+    private volatile boolean injectedTranslationToggleActionHookInstalled;
+    private volatile boolean injectedTranslationToggleActionLogged;
+    private volatile boolean injectedTranslationToggleActionFailureLogged;
     private volatile Object oplusMediaActionPrioritySelector;
     private final Set<String> translationToggleRule0Packages =
             Collections.synchronizedSet(new LinkedHashSet<>());
@@ -3764,6 +3772,101 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     }
 
+    void installInjectedTranslationToggleActionHook(String packageName) {
+        if (injectedTranslationToggleActionHookInstalled) {
+            return;
+        }
+        synchronized (this) {
+            if (injectedTranslationToggleActionHookInstalled) {
+                return;
+            }
+            try {
+                Method setPlaybackState = MediaSession.class.getDeclaredMethod(
+                        "setPlaybackState",
+                        PlaybackState.class);
+                hook(setPlaybackState)
+                        .setId(HOOK_ID_SET_PLAYBACK_STATE_TRANSLATION_ACTION + "-" + packageName)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onSetPlaybackStateForTranslationAction);
+                injectedTranslationToggleActionHookInstalled = true;
+                info("Hooked MediaSession#setPlaybackState for translation action in "
+                        + packageName);
+            } catch (Throwable t) {
+                error("Failed to hook MediaSession#setPlaybackState for translation action in "
+                        + packageName, t);
+            }
+        }
+    }
+
+    private Object onSetPlaybackStateForTranslationAction(
+            XposedInterface.Chain chain) throws Throwable {
+        Object stateArg = chain.getArg(0);
+        if (!(stateArg instanceof PlaybackState)) {
+            return chain.proceed();
+        }
+
+        PlaybackState original = (PlaybackState) stateArg;
+        if (hasCustomAction(original, TRANSLATION_TOGGLE_ACTION)) {
+            return chain.proceed();
+        }
+
+        try {
+            int iconResource = resolveTranslationActionPlaceholderIcon(original);
+            PlaybackState.CustomAction translationAction =
+                    new PlaybackState.CustomAction.Builder(
+                            TRANSLATION_TOGGLE_ACTION,
+                            TRANSLATION_ACTION_NAME,
+                            iconResource)
+                            .build();
+            PlaybackState patched = new PlaybackState.Builder(original)
+                    .addCustomAction(translationAction)
+                    .build();
+            Object[] patchedArgs = chain.getArgs().toArray(new Object[0]);
+            patchedArgs[0] = patched;
+            if (!injectedTranslationToggleActionLogged) {
+                injectedTranslationToggleActionLogged = true;
+                info("Injected lyricInfo translation action into player PlaybackState"
+                        + ", preservedCustomActions=" + original.getCustomActions().size());
+            }
+            return chain.proceed(patchedArgs);
+        } catch (Throwable t) {
+            if (!injectedTranslationToggleActionFailureLogged) {
+                injectedTranslationToggleActionFailureLogged = true;
+                error("Failed to inject lyricInfo translation action into PlaybackState", t);
+            }
+            return chain.proceed();
+        }
+    }
+
+    private static boolean hasCustomAction(PlaybackState state, String actionId) {
+        if (state == null || TextUtils.isEmpty(actionId)) {
+            return false;
+        }
+        for (PlaybackState.CustomAction action : state.getCustomActions()) {
+            if (action != null && actionId.equals(action.getAction())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int resolveTranslationActionPlaceholderIcon(PlaybackState state) {
+        for (PlaybackState.CustomAction action : state.getCustomActions()) {
+            if (action != null && action.getIcon() != 0) {
+                return action.getIcon();
+            }
+        }
+
+        Context context = currentApplicationContext();
+        if (context != null && context.getApplicationInfo() != null) {
+            int applicationIcon = context.getApplicationInfo().icon;
+            if (applicationIcon != 0) {
+                return applicationIcon;
+            }
+        }
+        return android.R.drawable.sym_def_app_icon;
+    }
+
     Object onPlayerLyricResultConstructed(XposedInterface.Chain chain) throws Throwable {
         Object result = chain.proceed();
         try {
@@ -3838,7 +3941,17 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         boolean mismatchedExistingLyricInfo = !TextUtils.isEmpty(existingLyricInfo)
                 && !lyricInfoMatchesTrack(existingLyricInfo, title, artist);
-        if (realLyric == null) {
+        LyricInfoContract.Payload existingPayload =
+                mismatchedExistingLyricInfo
+                        ? null
+                        : LyricInfoContract.parse(existingLyricInfo);
+        LockscreenIntegrationPolicy.LyricInfoSource lyricInfoSource =
+                LockscreenIntegrationPolicy.chooseLyricInfoSource(
+                        !TextUtils.isEmpty(existingLyricInfo)
+                                && !mismatchedExistingLyricInfo,
+                        existingPayload != null && existingPayload.hasModuleExtensionData(),
+                        realLyric != null);
+        if (lyricInfoSource != LockscreenIntegrationPolicy.LyricInfoSource.MODULE_CAPTURE) {
             if (mismatchedExistingLyricInfo) {
                 MediaMetadata cleared = new MediaMetadata.Builder(original)
                         .putString(OPLUS_LYRIC_INFO_KEY, "")
@@ -3849,15 +3962,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                         + title + ", artist=" + nullToEmpty(artist));
                 return chain.proceed(clearedArgs);
             }
-            if (TextUtils.isEmpty(existingLyricInfo) || trackChanged) {
+            if (lyricInfoSource == LockscreenIntegrationPolicy.LyricInfoSource.NONE
+                    && (TextUtils.isEmpty(existingLyricInfo) || trackChanged)) {
                 info("Skip lyricInfo injection because no fresh real lyric is cached for title="
                         + title + ", artist=" + nullToEmpty(artist));
             }
             return chain.proceed();
         }
 
-        String lyricInfo = mergeLyricInfo(
-                mismatchedExistingLyricInfo ? "" : existingLyricInfo,
+        String lyricInfo = buildModuleLyricInfo(
                 title,
                 artist,
                 duration,
@@ -3875,7 +3988,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         Object[] patchedArgs = args.toArray(new Object[0]);
         patchedArgs[0] = patched;
 
-        info((TextUtils.isEmpty(existingLyricInfo) ? "Injected" : "Enhanced") + " real " + realLyric.source
+        info((TextUtils.isEmpty(existingLyricInfo)
+                ? "Injected"
+                : "Replaced player lyricInfo with")
+                + " real " + realLyric.source
                 + " lyricInfo for title=" + title + ", artist=" + nullToEmpty(artist));
         return chain.proceed(patchedArgs);
     }
@@ -3939,12 +4055,15 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         try {
             String existingLyricInfo = metadata.getString(OPLUS_LYRIC_INFO_KEY);
-            if (!TextUtils.isEmpty(existingLyricInfo)
-                    && !lyricInfoMatchesTrack(existingLyricInfo, title, artist)) {
-                existingLyricInfo = "";
+            LyricInfoContract.Payload existingPayload =
+                    LyricInfoContract.parse(existingLyricInfo);
+            if (existingPayload != null
+                    && existingPayload.hasModuleExtensionData()
+                    && lyricInfoMatchesTrack(existingLyricInfo, title, artist)) {
+                return;
             }
-            String mergedLyricInfo = mergeLyricInfo(
-                    existingLyricInfo, title, artist, duration, lyric.lyric, lyric.rawLyric);
+            String mergedLyricInfo = buildModuleLyricInfo(
+                    title, artist, duration, lyric.lyric, lyric.rawLyric);
             rememberLyricBoundToTrack(lyric, trackKey);
             if (mergedLyricInfo.equals(existingLyricInfo)) {
                 return;
@@ -5615,39 +5734,17 @@ public final class LockscreenLyricsModule extends XposedModule {
         return true;
     }
 
-    private static String mergeLyricInfo(
-            String existing,
+    private static String buildModuleLyricInfo(
             String title,
             String artist,
             long duration,
             String lyric,
             String rawLyric) throws Exception {
-        JSONObject object;
-        if (TextUtils.isEmpty(existing)) {
-            object = new JSONObject();
-        } else {
-            try {
-                object = new JSONObject(existing);
-                if (rawLyric.equals(object.optString(OPLUS_RAW_LYRIC_INFO_KEY, ""))) {
-                    return existing;
-                }
-            } catch (Throwable ignored) {
-                object = new JSONObject();
-            }
-        }
-
-        if (TextUtils.isEmpty(object.optString("songName", ""))) {
-            object.put("songName", title);
-        }
-        if (TextUtils.isEmpty(object.optString("artist", ""))) {
-            object.put("artist", nullToEmpty(artist));
-        }
-        if (TextUtils.isEmpty(object.optString("songId", ""))) {
-            object.put("songId", buildSongId(title, artist, duration));
-        }
-        if (!looksLikeTimedLrc(object.optString("lyric", ""))) {
-            object.put("lyric", lyric);
-        }
+        JSONObject object = new JSONObject();
+        object.put("songName", title);
+        object.put("artist", nullToEmpty(artist));
+        object.put("songId", buildSongId(title, artist, duration));
+        object.put("lyric", lyric);
         object.put(OPLUS_RAW_LYRIC_INFO_KEY, rawLyric);
         return object.toString();
     }
