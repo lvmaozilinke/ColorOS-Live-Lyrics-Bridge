@@ -576,6 +576,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
             if (integrationAction) {
                 ensureTranslationToggleRule0(packageName);
+                promoteTranslationToggleAction(mediaButtonEx, (List<?>) actions, mediaAction);
                 if (!replaceMediaActionIcon(mediaAction, packageName)) {
                     rememberCurrentMediaActionIcon(mediaAction);
                 }
@@ -592,6 +593,24 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + ", protocol=" + (integrationAction ? "public" : "salt-legacy"));
             return;
         }
+    }
+
+    private void promoteTranslationToggleAction(
+            Object mediaButtonEx, List<?> actions, Object translationAction) {
+        ArrayList<Object> ordered = LockscreenIntegrationPolicy.promoteActionIdentity(
+                actions, translationAction);
+        if (ordered == null) {
+            return;
+        }
+
+        tryInvokeOneArgByName(mediaButtonEx, "setRule0CustomActions", ordered);
+        Object applied = invokeNoArgByName(mediaButtonEx, "getRule0CustomActions");
+        if (!(applied instanceof List)
+                || ((List<?>) applied).isEmpty()
+                || ((List<?>) applied).get(0) != translationAction) {
+            writeFieldValue(mediaButtonEx, "rule0CustomActions", ordered);
+        }
+        info("Promoted lyricInfo translation toggle ahead of transport custom actions");
     }
 
     private void rememberCurrentMediaActionIcon(Object mediaAction) {
@@ -2367,7 +2386,19 @@ public final class LockscreenLyricsModule extends XposedModule {
             translationLine = model.findLineByTranslationNearIndex(normalizedText, anchorIndex, 2);
         }
         if (line == null && translationLine == null && duplicateText) {
-            return LyricTextMatch.EMPTY;
+            WordLine activeLine = model.findActiveLine(position);
+            if (activeLine != null) {
+                if (LockscreenIntegrationPolicy.activeTextMatches(
+                        normalizedText, activeLine.normalizedText)) {
+                    line = activeLine;
+                } else if (LockscreenIntegrationPolicy.activeTextMatches(
+                        normalizedText, activeLine.normalizedTranslation())) {
+                    translationLine = activeLine;
+                }
+            }
+            if (line == null && translationLine == null) {
+                return LyricTextMatch.EMPTY;
+            }
         }
         if (line == null && translationLine == null) {
             line = model.findLineByText(normalizedText, position);
@@ -2431,7 +2462,18 @@ public final class LockscreenLyricsModule extends XposedModule {
             translationLine = model.findLineByTranslationNearIndex(normalizedText, anchorIndex, 2);
         }
         if (line == null && translationLine == null && duplicateText) {
-            return null;
+            if (activeLine != null) {
+                if (LockscreenIntegrationPolicy.activeTextMatches(
+                        normalizedText, activeLine.normalizedText)) {
+                    line = activeLine;
+                } else if (LockscreenIntegrationPolicy.activeTextMatches(
+                        normalizedText, activeLine.normalizedTranslation())) {
+                    translationLine = activeLine;
+                }
+            }
+            if (line == null && translationLine == null) {
+                return null;
+            }
         }
         if (line == null && translationLine == null) {
             line = activeLine != null && matchesWordLineText(activeLine, normalizedText)
