@@ -35,10 +35,14 @@ android.media.session.MediaSession#setMetadata(android.media.MediaMetadata)
 SystemUI 进程：
 
 - 从 OPlus 媒体数据中读取 `lyricInfo`。
+- 在进入 OPlus 官方列表前规范化逐行 LRC，保证每个时间戳只生成一个主歌词 item，翻译与逐字时间轴继续保留在完整模型中。
 - 优先使用 `rawLyric` 构建逐字歌词时间轴。
 - 将原始 `lyricInfo` 中带时间戳的翻译行合并到逐字模型。
+- 使用 DexKit 动态识别 OPlus 私有媒体与歌词入口，并保留旧类名回退路径。
 - 在官方锁屏歌词 `TextView.onDraw(Canvas)` 路径内完成绘制。
-- 保持固定高度歌词 item、短句垂直居中、长主歌词使用随进度移动的两行窗口，并让当前句和下一句保持清晰显示。
+- 使用时间戳、规范化文本与出现顺序映射官方 item，稳定处理重复歌词和首行预滚动。
+- 使用 `80dp` 固定歌词槽位与 `6dp` 间距，收紧短句视觉密度；长主歌词继续使用两行滑动窗口，并将当前进度行放在视口中心下方约 `48dp`。
+- 在歌词界面发生短暂可见性切换后恢复绘制，播放过程中不按内容改变 item 几何。
 - 无需硬编码包名，动态识别主动提供 `lyricInfo` 的播放器。
 - 当已识别歌词提供者的锁屏歌词 UI 正在显示时，阻止屏幕按系统超时时间自动熄灭。
 
@@ -63,15 +67,15 @@ containerView.isShown=true
 hasLyric=false
 ```
 
-只有同时满足这些条件时，模块才会持有 `SCREEN_DIM_WAKE_LOCK`：
+只有同时满足这些条件时，模块才会持有 15 秒租约的 `SCREEN_BRIGHT_WAKE_LOCK`：
 
 - 当前包名属于内置兼容适配器，或者是有效 `lyricInfo` 的当前提供者。
 - OPlus 歌词 UI 模式处于激活状态。
 - 播放状态是正在播放。
-- 有歌词证据，例如已经解析出的逐字歌词模型、官方歌词元数据，或者最近可见的官方歌词视图。
-- 屏幕仍处于交互状态，并且用户还没有解锁进入桌面。
+- 有来自最近可见官方歌词视图的歌词证据；刚收到的歌词元数据只提供很短的过渡窗口。
+- 屏幕仍处于交互状态，并且 Keyguard 仍在显示。
 
-保活期间，模块还会大约每 8 秒调用一次 `PowerManager.userActivity(...)`，让系统把锁屏歌词视图视为仍在被观看。遇到息屏、用户解锁、播放停止、歌词消失、包名不受支持或其他条件变化时，会立即释放 wake lock。
+保活期间，模块会续租 wake lock，并大约每 8 秒调用一次 `PowerManager.userActivity(...)`，让系统把锁屏歌词视图视为仍在被观看。遇到息屏、真正离开 Keyguard、播放停止、可见歌词证据消失、包名不受支持或其他条件变化时，会立即释放 wake lock。收到 `ACTION_USER_PRESENT` 后会短暂延迟复核 Keyguard 状态，因此人脸识别成功但仍停留在锁屏歌词页时会恢复保活。
 
 主动接入的播放器会从当前媒体会话中被动态识别，不需要加入 `scope.list` 或 `PLAYER_ADAPTERS`。如果某个系统版本修改了 `PluginSeedling--Template` 日志格式，则可能需要更新 SystemUI 侧的识别逻辑。
 
@@ -126,21 +130,21 @@ Salt 适配器已验证 Salt Player 12.0.0 正式版与 alpha07；ConePlayer 适
 ## 构建
 
 ```powershell
-.\gradlew.bat :app:assembleDebug
+.\scripts\gradle-local.cmd testDebugUnitTest assembleDebug
 ```
 
 APK 输出位置：
 
 ```text
-app\build\outputs\apk\debug\app-debug.apk
+.gradle-local-build\app\outputs\apk\debug\app-debug.apk
 ```
 
-构建需要 JDK 21，以便读取 Lyrics Core 依赖；应用本身仍输出 Java 17 字节码以保持 Android 兼容性。
+构建需要 JDK 21，以便读取 Lyrics Core 依赖。本地脚本会依次从 `SALT_LYRIC_JAVA_HOME`、`JAVA_HOME` 和常见 JDK 安装目录中查找，并把仓库临时映射到 ASCII 盘符，避免中文路径导致 Gradle 测试进程类路径异常；应用本身仍输出 Java 17 字节码以保持 Android 兼容性。
 
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：在 Actions 页面手动触发。输入类似 `v1.1.0` 的 tag 后，工作流会构建 release 签名 APK，把 APK `versionName` 设为 `1.1.0`，并创建 GitHub Release。
+- `Release APK`：推送类似 `v1.7.1` 的 tag 后在 Actions 页面手动触发。工作流会检出该 tag、读取 `docs/releases/<tag>.md`、构建 release 签名 APK、从 tag 设置 `versionName`，创建 GitHub Release，并同步发布到 LSPosed 模块仓库。
 
 手动发布工作流需要这些仓库 secrets：
 
@@ -148,13 +152,14 @@ app\build\outputs\apk\debug\app-debug.apk
 - `KEY_STORE_PASSWORD`：keystore 密码。
 - `KEY_ALIAS`：签名 key alias。
 - `KEY_PASSWORD`：签名 key 密码。
+- `LSP_REPO_TOKEN`：对 `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` 具有 release 写入权限的 PAT。
 
 发布产物会命名为 `ColorOS-Live-Lyrics-Bridge-<tag>.apk`。
 
 使用播放器适配器测试：
 
 ```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb install -r .gradle-local-build\app\outputs\apk\debug\app-debug.apk
 adb shell am force-stop com.salt.music
 # 或：adb shell am force-stop ink.trantor.coneplayer
 ```
@@ -180,7 +185,7 @@ LockscreenLyrics: Cached real timed lyric from LRC_FILE, rawChars=..., oplusChar
 LockscreenLyrics: Injected real LRC_FILE lyricInfo for title=...
 LockscreenLyrics: Cached SystemUI word lyric model, lines=...
 LockscreenLyrics: Lockscreen lyric UI keep-awake ON
-LockscreenLyrics: Acquired screen timeout wake lock without timeout
+LockscreenLyrics: Acquired bright screen timeout wake lock lease=15000ms
 LockscreenLyrics: Pulsed screen timeout user activity without changing lights
 LockscreenLyrics: Hooked LyricsRecyclerView#setCurrentLyric, methods=...
 LockscreenLyrics: LyricsRecyclerView current index=...

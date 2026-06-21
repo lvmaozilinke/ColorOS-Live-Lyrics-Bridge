@@ -36,7 +36,16 @@ final class SaltPlayerAdapter implements PlayerAdapter {
     }
 
     @Override
+    public LyricProviderCapabilities lyricCapabilities() {
+        return LyricProviderCapabilities.PASSIVE_PARSER;
+    }
+
+    @Override
     public void installLyricSourceHooks(LockscreenLyricsModule module, ClassLoader classLoader) {
+        // Some Salt Player builds do not publish the legacy desktop-lyric custom action.
+        // Inject the public translation action so SystemUI can always build the toggle.
+        module.installInjectedTranslationToggleActionHook(PACKAGE_NAME);
+
         try {
             ensureDexKitLoaded();
         } catch (Throwable t) {
@@ -44,6 +53,8 @@ final class SaltPlayerAdapter implements PlayerAdapter {
             return;
         }
 
+        // This adapter resolves once when the player process becomes ready, then closes the
+        // bridge after all related queries.
         try (DexKitBridge bridge = DexKitBridge.create(classLoader, true)) {
             ClassData sourceEnum = findSingleClassUsingStrings(
                     bridge,
@@ -62,7 +73,8 @@ final class SaltPlayerAdapter implements PlayerAdapter {
             int hookCount = hookLyricResultConstructors(
                     module,
                     lyricResultClass,
-                    sourceEnumClass);
+                    sourceEnumClass,
+                    lyricCapabilities());
             if (hookCount == 0) {
                 throw new IllegalStateException(
                         "No matching lyric result constructors in " + lyricResult.getName());
@@ -128,7 +140,8 @@ final class SaltPlayerAdapter implements PlayerAdapter {
     private static int hookLyricResultConstructors(
             LockscreenLyricsModule module,
             Class<?> lyricResultClass,
-            Class<?> sourceEnumClass) {
+            Class<?> sourceEnumClass,
+            LyricProviderCapabilities capabilities) {
         int count = 0;
         for (Constructor<?> constructor : lyricResultClass.getDeclaredConstructors()) {
             String kind = lyricConstructorKind(constructor, sourceEnumClass);
@@ -140,7 +153,9 @@ final class SaltPlayerAdapter implements PlayerAdapter {
                     .setId(HOOK_ID_PREFIX
                             + simpleClassName(lyricResultClass.getName()) + "-" + kind)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                    .intercept(module::onPlayerLyricResultConstructed);
+                    .intercept(chain -> module.onPlayerLyricResultConstructed(
+                            chain,
+                            capabilities));
             count++;
         }
         return count;

@@ -16,14 +16,13 @@ This is a Gradle Kotlin DSL Android project for an LSPosed/libxposed API 102 mod
 JDK 21 is required, although Android output targets Java 17 bytecode.
 
 ```powershell
-$env:JAVA_HOME='C:\Users\Andrea-TB\.jdks\temurin-21'
-.\gradlew.bat :app:assembleDebug
-.\gradlew.bat :app:testDebugUnitTest
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+.\scripts\gradle-local.cmd :app:assembleDebug
+.\scripts\gradle-local.cmd :app:testDebugUnitTest
+adb install -r .gradle-local-build\app\outputs\apk\debug\app-debug.apk
 adb logcat -v time -s LockscreenLyrics
 ```
 
-`assembleDebug` produces the test APK. `testDebugUnitTest` runs the JUnit 4 suite. After installation, enable the module for System UI and the target player in LSPosed, then restart affected processes.
+`scripts\gradle-local.cmd` discovers JDK 21 from `SALT_LYRIC_JAVA_HOME`, `JAVA_HOME`, or common local JDK locations, runs Gradle through a temporary ASCII drive letter, bypasses the local PowerShell script execution policy for this helper only, stores the wrapper cache in `.gradle-user-home/`, and writes build outputs to `.gradle-local-build/`. This avoids Windows/Gradle test-worker classpath corruption when the repository path contains Chinese characters and avoids stale `app/build` output locks. `assembleDebug` produces the test APK. `testDebugUnitTest` runs the JUnit 4 suite. After installation, enable the module for System UI and the target player in LSPosed, then restart affected processes.
 
 ## Coding Style & Naming Conventions
 

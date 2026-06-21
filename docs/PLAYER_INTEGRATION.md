@@ -15,6 +15,8 @@ Players that already own timed lyrics do not need an in-module `PlayerAdapter` o
 - `lyric` is required and must contain at least one timed LRC tag.
 - `songName`, `artist`, and a stable `songId` should be provided.
 - `rawLyric` is optional. It enables the module's word-level highlighting and layout renderer.
+- Before OPlus consumes `lyric`, the module normalizes same-timestamp bilingual groups to one primary line item. Keep complete translations and word timing in `rawLyric` or a timed translation field.
+- Zero-width spacer-only lines are ignored. Use real timed primary lines rather than invisible placeholders to control list position.
 - A player that publishes only `lyric` still gets native OPlus line-level lyrics, dynamic provider recognition, whitelist bypass, and screen-timeout handling.
 - The player does not need to be added to the module's LSPosed scope.
 

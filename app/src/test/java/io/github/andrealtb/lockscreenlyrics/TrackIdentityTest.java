@@ -8,6 +8,48 @@ import org.junit.Test;
 
 public final class TrackIdentityTest {
     @Test
+    public void lrcTitleTagCanContainCompositeTitleAndArtist() {
+        assertEquals(
+                TrackIdentity.buildKey("Alma Mater [Explicit]", "Bleachers"),
+                TrackIdentity.buildLrcHintKey(
+                        "Alma Mater (Explicit) - Bleachers",
+                        ""));
+    }
+
+    @Test
+    public void saltRelayArtistRestoresStableTrackIdentity() {
+        TrackIdentity.SaltRelayIdentity identity =
+                TrackIdentity.parseSaltRelayArtist(
+                        "William Black/Fairlane - Broken");
+
+        assertEquals("Broken", identity.title);
+        assertEquals("William Black/Fairlane", identity.artist);
+    }
+
+    @Test
+    public void saltRelayArtistKeepsAdditionalTitleSeparators() {
+        TrackIdentity.SaltRelayIdentity identity =
+                TrackIdentity.parseSaltRelayArtist(
+                        "Porter Robinson - Kitsune Maison Freestyle - Live");
+
+        assertEquals("Kitsune Maison Freestyle - Live", identity.title);
+        assertEquals("Porter Robinson", identity.artist);
+    }
+
+    @Test
+    public void saltRelayIdentityMatchesExplicitLrcHintDuringMetadataHandoff() {
+        TrackIdentity.SaltRelayIdentity identity =
+                TrackIdentity.parseSaltRelayArtist("Adele - All I Ask");
+
+        assertTrue(TrackIdentity.relayIdentityMatchesHint(
+                identity,
+                TrackIdentity.buildKey("All I Ask", "Adele")));
+        assertFalse(TrackIdentity.relayIdentityMatchesHint(
+                identity,
+                TrackIdentity.buildKey("Actually Romantic", "Taylor Swift")));
+    }
+
+    @Test
     public void explicitSuffixDoesNotChangeTrackIdentity() {
         assertEquals(
                 TrackIdentity.buildKey("Modern Girl", "Bleachers"),
@@ -38,11 +80,4 @@ public final class TrackIdentityTest {
                 TrackIdentity.buildKey("Tiny Moves", "Bleachers")));
     }
 
-    @Test
-    public void transitionFallbackAllowsSmallPreMetadataLead() {
-        assertTrue(TrackIdentity.isTransitionResult(-23L, 250L, 800L));
-        assertTrue(TrackIdentity.isTransitionResult(800L, 250L, 800L));
-        assertFalse(TrackIdentity.isTransitionResult(-251L, 250L, 800L));
-        assertFalse(TrackIdentity.isTransitionResult(801L, 250L, 800L));
-    }
 }
