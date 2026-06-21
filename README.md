@@ -35,10 +35,14 @@ For built-in compatibility adapters, a valid lyric captured for the current trac
 SystemUI process:
 
 - Reads `lyricInfo` from OPlus media data.
+- Normalizes the official line-level LRC so each timestamp produces one primary OPlus list item, while translations and word timing remain in the complete model.
 - Builds a word-level timeline from `rawLyric` when available.
 - Merges timed translation lines from the original `lyricInfo` into the word-level model.
+- Resolves private OPlus media and lyric targets through DexKit, with legacy class-name fallback.
 - Draws inside the official lock-screen lyric `TextView.onDraw(Canvas)` path.
-- Keeps fixed-height lyric items, centers short lyrics, uses a moving two-line window for long main lyrics, and keeps the active plus next line clear while farther lines remain softened.
+- Maps official items by timestamp, normalized text, and occurrence order so repeated lyrics and pre-roll lines remain stable.
+- Keeps `80dp` lyric slots with `6dp` spacing, tightens short-line density, uses a moving two-line window for long main lyrics, and places the active line about `48dp` below the viewport center.
+- Recovers lyric rendering after transient visibility changes without changing item geometry during playback.
 - Dynamically recognizes player-provided `lyricInfo` without a hard-coded package name.
 - Keeps the screen from timing out while the recognized provider's lock-screen lyric UI is actively visible.
 
@@ -126,21 +130,21 @@ The local `../LSP_api` folder is libxposed API `102.0.0`. This project follows i
 ## Build
 
 ```powershell
-.\gradlew.bat :app:assembleDebug
+.\scripts\gradle-local.cmd testDebugUnitTest assembleDebug
 ```
 
 APK output:
 
 ```text
-app\build\outputs\apk\debug\app-debug.apk
+.gradle-local-build\app\outputs\apk\debug\app-debug.apk
 ```
 
-JDK 21 is required to compile the Lyrics Core dependency. The app itself still targets Java 17 bytecode for Android compatibility.
+JDK 21 is required to compile the Lyrics Core dependency. The helper discovers it from `SALT_LYRIC_JAVA_HOME`, `JAVA_HOME`, or common local JDK locations, and maps the repository to a temporary ASCII drive so Gradle works reliably when the checkout path contains non-ASCII characters. The app itself still targets Java 17 bytecode for Android compatibility.
 
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK`: manually triggered from the Actions page. Enter a tag such as `v1.1.0`; the workflow builds a release-signed APK, sets the APK `versionName` to `1.1.0`, and publishes it in a GitHub Release.
+- `Release APK`: manually triggered after pushing a tag such as `v1.7.0`. The workflow checks out that tag, reads `docs/releases/<tag>.md`, builds a release-signed APK, sets the APK `versionName` from the tag, and publishes the GitHub Release.
 
 The manual release workflow expects these repository secrets:
 
@@ -154,7 +158,7 @@ The release APK is published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`.
 Install and test with a built-in adapter:
 
 ```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb install -r .gradle-local-build\app\outputs\apk\debug\app-debug.apk
 adb shell am force-stop com.salt.music
 # Or: adb shell am force-stop ink.trantor.coneplayer
 ```

@@ -35,10 +35,14 @@ android.media.session.MediaSession#setMetadata(android.media.MediaMetadata)
 SystemUI 进程：
 
 - 从 OPlus 媒体数据中读取 `lyricInfo`。
+- 在进入 OPlus 官方列表前规范化逐行 LRC，保证每个时间戳只生成一个主歌词 item，翻译与逐字时间轴继续保留在完整模型中。
 - 优先使用 `rawLyric` 构建逐字歌词时间轴。
 - 将原始 `lyricInfo` 中带时间戳的翻译行合并到逐字模型。
+- 使用 DexKit 动态识别 OPlus 私有媒体与歌词入口，并保留旧类名回退路径。
 - 在官方锁屏歌词 `TextView.onDraw(Canvas)` 路径内完成绘制。
-- 保持固定高度歌词 item、短句垂直居中、长主歌词使用随进度移动的两行窗口，并让当前句和下一句保持清晰显示。
+- 使用时间戳、规范化文本与出现顺序映射官方 item，稳定处理重复歌词和首行预滚动。
+- 使用 `80dp` 固定歌词槽位与 `6dp` 间距，收紧短句视觉密度；长主歌词继续使用两行滑动窗口，并将当前进度行放在视口中心下方约 `48dp`。
+- 在歌词界面发生短暂可见性切换后恢复绘制，播放过程中不按内容改变 item 几何。
 - 无需硬编码包名，动态识别主动提供 `lyricInfo` 的播放器。
 - 当已识别歌词提供者的锁屏歌词 UI 正在显示时，阻止屏幕按系统超时时间自动熄灭。
 
@@ -126,21 +130,21 @@ Salt 适配器已验证 Salt Player 12.0.0 正式版与 alpha07；ConePlayer 适
 ## 构建
 
 ```powershell
-.\gradlew.bat :app:assembleDebug
+.\scripts\gradle-local.cmd testDebugUnitTest assembleDebug
 ```
 
 APK 输出位置：
 
 ```text
-app\build\outputs\apk\debug\app-debug.apk
+.gradle-local-build\app\outputs\apk\debug\app-debug.apk
 ```
 
-构建需要 JDK 21，以便读取 Lyrics Core 依赖；应用本身仍输出 Java 17 字节码以保持 Android 兼容性。
+构建需要 JDK 21，以便读取 Lyrics Core 依赖。本地脚本会依次从 `SALT_LYRIC_JAVA_HOME`、`JAVA_HOME` 和常见 JDK 安装目录中查找，并把仓库临时映射到 ASCII 盘符，避免中文路径导致 Gradle 测试进程类路径异常；应用本身仍输出 Java 17 字节码以保持 Android 兼容性。
 
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：在 Actions 页面手动触发。输入类似 `v1.1.0` 的 tag 后，工作流会构建 release 签名 APK，把 APK `versionName` 设为 `1.1.0`，并创建 GitHub Release。
+- `Release APK`：推送类似 `v1.7.0` 的 tag 后在 Actions 页面手动触发。工作流会检出该 tag、读取 `docs/releases/<tag>.md`、构建 release 签名 APK、从 tag 设置 `versionName`，并创建 GitHub Release。
 
 手动发布工作流需要这些仓库 secrets：
 
@@ -154,7 +158,7 @@ app\build\outputs\apk\debug\app-debug.apk
 使用播放器适配器测试：
 
 ```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb install -r .gradle-local-build\app\outputs\apk\debug\app-debug.apk
 adb shell am force-stop com.salt.music
 # 或：adb shell am force-stop ink.trantor.coneplayer
 ```
