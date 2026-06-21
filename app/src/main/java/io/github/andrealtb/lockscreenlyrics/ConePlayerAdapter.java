@@ -43,6 +43,11 @@ final class ConePlayerAdapter implements PlayerAdapter {
     }
 
     @Override
+    public LyricProviderCapabilities lyricCapabilities() {
+        return LyricProviderCapabilities.PASSIVE_PARSER;
+    }
+
+    @Override
     public void installLyricSourceHooks(LockscreenLyricsModule module, ClassLoader classLoader) {
         module.installInjectedTranslationToggleActionHook(packageName);
 
@@ -59,7 +64,10 @@ final class ConePlayerAdapter implements PlayerAdapter {
             module.hook(parserMethod)
                     .setId("cone-player-lrc-parser-" + packageName)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                    .intercept(chain -> onParseLyric(module, chain));
+                    .intercept(chain -> onParseLyric(
+                            module,
+                            chain,
+                            lyricCapabilities()));
             module.info("Hooked " + displayName() + " lyric parser via DexKit: "
                     + parserMethod.getDeclaringClass().getName() + "#" + parserMethod.getName());
         } catch (Throwable t) {
@@ -138,11 +146,15 @@ final class ConePlayerAdapter implements PlayerAdapter {
 
     private static Object onParseLyric(
             LockscreenLyricsModule module,
-            XposedInterface.Chain chain) throws Throwable {
+            XposedInterface.Chain chain,
+            LyricProviderCapabilities capabilities) throws Throwable {
         Object rawLyricArg = chain.getArg(0);
         Object result = chain.proceed();
         if (rawLyricArg instanceof String) {
-            module.cacheTimedLyric(SOURCE_NAME, (String) rawLyricArg);
+            module.cacheTimedLyric(
+                    SOURCE_NAME,
+                    (String) rawLyricArg,
+                    capabilities);
         }
         return result;
     }
